@@ -2,97 +2,153 @@
 #include <string.h>
 #include <ctype.h>
 
-#define MAX 20
+#define MAX 10
 
-char grammar[MAX][MAX];
-char symbols[MAX]; // combined array for terminals & non-terminals
-int n, symCount = 0;
+char productions[MAX][MAX];
+char non_terminals[MAX], terminals[MAX];
+int n, nt_count = 0, t_count = 0;
 
-int isTerminal(char ch) {
-    return !isupper(ch);
+char leading[MAX][MAX], trailing[MAX][MAX];
+int leading_count[MAX] = {0}, trailing_count[MAX] = {0};
+
+char precedence_table[MAX][MAX];
+
+// Check if symbol is terminal
+int is_terminal(char symbol) {
+    return !isupper(symbol) && symbol != '\0';
 }
 
-int findIndex(char ch) {
-    for (int i = 0; i < symCount; i++) {
-        if (symbols[i] == ch)
-            return i;
-    }
+// Add unique character to an array
+void add_unique(char arr[], int *count, char c) {
+    for (int i = 0; i < *count; i++)
+        if (arr[i] == c) return;
+    arr[(*count)++] = c;
+}
+
+// Get index of non-terminal
+int get_nt_index(char nt) {
+    for (int i = 0; i < nt_count; i++)
+        if (non_terminals[i] == nt) return i;
     return -1;
 }
 
-void addSymbol(char ch) {
-    if (findIndex(ch) == -1) {
-        symbols[symCount++] = ch;
-    }
-}
-
-void generatePrecedenceTable(char expr[]) {
-    char table[MAX][MAX];
-
-    // Initialize table
-    for (int i = 0; i < symCount; i++) {
-        for (int j = 0; j < symCount; j++) {
-            table[i][j] = '.';
-        }
-    }
-
-    // Fill precedence based on expression (simplified logic)
-    for (int i = 0; expr[i+1] != '\0'; i++) {
-        if (isTerminal(expr[i]) && isTerminal(expr[i+1])) {
-            int row = findIndex(expr[i]);
-            int col = findIndex(expr[i+1]);
-            if (row != -1 && col != -1) {
-                if (expr[i] == expr[i+1]) table[row][col] = '.';
-                else if (expr[i] > expr[i+1]) table[row][col] = '>';
-                else table[row][col] = '<';
+// Compute LEADING set
+void compute_leading() {
+    for (int i = 0; i < nt_count; i++) {
+        char nt = non_terminals[i];
+        for (int j = 0; j < n; j++) {
+            if (productions[j][0] == nt) {
+                if (is_terminal(productions[j][2])) {
+                    add_unique(leading[i], &leading_count[i], productions[j][2]);
+                } else if (isupper(productions[j][2]) && is_terminal(productions[j][3])) {
+                    int idx = get_nt_index(productions[j][2]);
+                    if (idx != -1)
+                        add_unique(leading[i], &leading_count[i], productions[j][3]);
+                }
             }
         }
     }
+}
 
-    // Print table header
-    printf("\nOperator Precedence Table:\n\t");
-    for (int i = 0; i < symCount; i++) {
-        if (isTerminal(symbols[i]))
-            printf("%c\t", symbols[i]);
+// Compute TRAILING set
+void compute_trailing() {
+    for (int i = 0; i < nt_count; i++) {
+        char nt = non_terminals[i];
+        for (int j = 0; j < n; j++) {
+            if (productions[j][0] == nt) {
+                int len = strlen(productions[j]);
+                if (is_terminal(productions[j][len - 1])) {
+                    add_unique(trailing[i], &trailing_count[i], productions[j][len - 1]);
+                } else if (isupper(productions[j][len - 1]) && is_terminal(productions[j][len - 2])) {
+                    int idx = get_nt_index(productions[j][len - 1]);
+                    if (idx != -1)
+                        add_unique(trailing[i], &trailing_count[i], productions[j][len - 2]);
+                }
+            }
+        }
     }
+}
 
+// Set precedence relation
+void set_precedence(char a, char b, char rel) {
+    int i = -1, j = -1;
+    for (int k = 0; k < t_count; k++) {
+        if (terminals[k] == a) i = k;
+        if (terminals[k] == b) j = k;
+    }
+    if (i != -1 && j != -1)
+        precedence_table[i][j] = rel;
+}
+
+// Construct operator precedence table
+void construct_table() {
+    for (int i = 0; i < t_count; i++)
+        for (int j = 0; j < t_count; j++)
+            precedence_table[i][j] = ' ';
+
+    for (int i = 0; i < n; i++) {
+        char *prod = productions[i];
+        for (int j = 2; j < strlen(prod) - 1; j++) {
+            if (is_terminal(prod[j]) && is_terminal(prod[j + 1])) {
+                set_precedence(prod[j], prod[j + 1], '=');
+            } else if (is_terminal(prod[j]) && isupper(prod[j + 1])) {
+                int idx = get_nt_index(prod[j + 1]);
+                for (int k = 0; k < leading_count[idx]; k++) {
+                    set_precedence(prod[j], leading[idx][k], '<');
+                }
+            } else if (isupper(prod[j]) && is_terminal(prod[j + 1])) {
+                int idx = get_nt_index(prod[j]);
+                for (int k = 0; k < trailing_count[idx]; k++) {
+                    set_precedence(trailing[idx][k], prod[j + 1], '>');
+                }
+            }
+        }
+    }
+}
+
+// Print the operator precedence table
+void print_table() {
+    printf("\nOperator Precedence Table:\n    ");
+    for (int i = 0; i < t_count; i++) {
+        printf("%c   ", terminals[i]);
+    }
     printf("\n");
-    for (int i = 0; i < symCount; i++) {
-        if (!isTerminal(symbols[i])) continue; // Only terminals
-        printf("%c\t", symbols[i]);
-        for (int j = 0; j < symCount; j++) {
-            if (isTerminal(symbols[j]))
-                printf("%c\t", table[i][j]);
+
+    for (int i = 0; i < t_count; i++) {
+        printf("%c | ", terminals[i]);
+        for (int j = 0; j < t_count; j++) {
+            char c = precedence_table[i][j];
+            printf("%c   ", c == ' ' ? '-' : c);
         }
         printf("\n");
     }
 }
 
+// Main
 int main() {
-    char expr[MAX];
-
-    printf("Enter number of grammar rules: ");
+    printf("Enter number of productions: ");
     scanf("%d", &n);
+    getchar();  // consume newline
 
-    printf("Enter the grammar rules (like S->aAb):\n");
+    printf("Enter productions (e.g., E=E+T):\n");
     for (int i = 0; i < n; i++) {
-        scanf("%s", grammar[i]);
-        for (int j = 3; grammar[i][j] != '\0'; j++) {
-            addSymbol(grammar[i][j]);
+        fgets(productions[i], MAX, stdin);
+        productions[i][strcspn(productions[i], "\n")] = '\0';  // Remove newline
+
+        // Build non-terminal list
+        add_unique(non_terminals, &nt_count, productions[i][0]);
+
+        // Build terminal list
+        for (int j = 2; j < strlen(productions[i]); j++) {
+            if (is_terminal(productions[i][j]))
+                add_unique(terminals, &t_count, productions[i][j]);
         }
     }
 
-    printf("Enter the expression (like a+b-(c*d)): ");
-    scanf("%s", expr);
-
-    // Add terminals from expression
-    for (int i = 0; expr[i] != '\0'; i++) {
-        if (isTerminal(expr[i]) && expr[i] != '(' && expr[i] != ')') {
-            addSymbol(expr[i]);
-        }
-    }
-
-    generatePrecedenceTable(expr);
+    compute_leading();
+    compute_trailing();
+    construct_table();
+    print_table();
 
     return 0;
 }
